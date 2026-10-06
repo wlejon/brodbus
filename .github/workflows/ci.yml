@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# brodbus has no siblings and no JavaScript binding: every job builds this
+# repo alone.
+#
+# Linux is the real target: sd-bus from libsystemd, with every test that
+# talks to a bus running against its own private dbus-daemon (PrivateBus), so
+# nothing touches the runner's system or session bus.
+#
+# Windows and macOS build the portable value types plus src/unavailable.cpp,
+# and run test_types and test_unavailable, which holds every D-Bus entry point
+# to refusing with "D-Bus is only supported on Linux". That is the contract
+# downstream libraries (brosys, brocred, broseat, broportal) rely on when they
+# compile on those platforms.
+env:
+  LINUX_PACKAGES: >-
+    ninja-build pkg-config libsystemd-dev dbus-daemon dbus-bin
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-gcc,          os: ubuntu-24.04, cc: gcc,   cxx: g++,     config: Release }
+          - { name: linux-clang,        os: ubuntu-24.04, cc: clang, cxx: clang++, config: Release }
+          # Debug (-O0): the Linux job where assert()s in sd-bus callers are live.
+          - { name: linux-gcc-debug,    os: ubuntu-24.04, cc: gcc,   cxx: g++,     config: Debug }
+          - { name: windows-msvc,       os: windows-2022,                          config: Release }
+          # Debug CRT: iterator debugging and the library's own assert()s.
+          - { name: windows-msvc-debug, os: windows-2022,                          config: Debug }
+          - { name: macos-arm64,        os: macos-15,                              config: Release }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends $LINUX_PACKAGES
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake -B build
+          else
+            cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          fi
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }} --parallel 4
+
+      - name: Test
+        shell: bash
+        run: .github/ci/ctest.sh --test-dir build -C ${{ matrix.config }}

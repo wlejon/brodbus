@@ -2,9 +2,19 @@
 
 #include <map>
 #include <string>
+#if !defined(_WIN32)
 #include <sys/types.h>
+#endif
 
 namespace brodbus {
+
+// The daemon's process id: pid_t where POSIX has one. Windows has no pid_t,
+// and there PrivateBus is the unavailable stub whose pid() is always -1.
+#if defined(_WIN32)
+using process_id = int;
+#else
+using process_id = pid_t;
+#endif
 
 class PrivateBus {
 public:
@@ -18,7 +28,7 @@ public:
     PrivateBus& operator=(PrivateBus&& other) noexcept;
 
     const std::string& address() const noexcept { return address_; }
-    pid_t pid() const noexcept { return pid_; }
+    process_id pid() const noexcept { return pid_; }
     bool is_valid() const noexcept { return pid_ > 0 && !address_.empty(); }
     bool ok() const noexcept { return is_valid(); }
     explicit operator bool() const noexcept { return is_valid(); }
@@ -35,7 +45,7 @@ private:
 
     std::string base_address_;
     std::string address_;
-    pid_t pid_ = -1;
+    process_id pid_ = -1;
 };
 
 }  // namespace brodbus

@@ -1,0 +1,55 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+# What brodbus reads is not its own: messages off a bus any peer can write to.
+# Message unpacking (containers, variants, string and byte arrays) and the
+# property cache fed by PropertiesChanged signals are where the realistic bugs
+# are, and they sit under every desktop library that talks D-Bus.
+#
+# Linux only: the Windows and macOS builds are the unavailable stubs and the
+# value types, which the Linux build compiles as well. brodbus has no vendored
+# or sibling code, so the whole build is traced.
+jobs:
+  analyze:
+    name: Analyze C++
+    runs-on: ubuntu-24.04
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config libsystemd-dev
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build (traced)
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBRODBUS_BUILD_TESTS=OFF
+          cmake --build build --parallel 4
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:c-cpp
