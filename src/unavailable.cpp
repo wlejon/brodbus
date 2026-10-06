@@ -483,16 +483,17 @@ void PropertyCache::set_cached_property(const std::string& name, PropertyValue v
 
 // --- PrivateBus ---
 
-PrivateBus::PrivateBus() {}
+PrivateBus::PrivateBus(const std::string&) {}
 PrivateBus::~PrivateBus() {}
 
 PrivateBus::PrivateBus(PrivateBus&& other) noexcept
-    : address_(std::move(other.address_)), pid_(other.pid_) {
+    : base_address_(std::move(other.base_address_)), address_(std::move(other.address_)), pid_(other.pid_) {
     other.pid_ = -1;
 }
 
 PrivateBus& PrivateBus::operator=(PrivateBus&& other) noexcept {
     if (this != &other) {
+        base_address_ = std::move(other.base_address_);
         address_ = std::move(other.address_);
         pid_ = other.pid_;
         other.pid_ = -1;
@@ -501,6 +502,7 @@ PrivateBus& PrivateBus::operator=(PrivateBus&& other) noexcept {
 }
 
 void PrivateBus::stop() {}
+bool PrivateBus::restart() { return false; }
 
 }  // namespace brodbus
 

@@ -8,7 +8,7 @@ namespace brodbus {
 
 class PrivateBus {
 public:
-    PrivateBus();
+    explicit PrivateBus(const std::string& address = "");
     ~PrivateBus();
 
     PrivateBus(const PrivateBus&) = delete;
@@ -28,8 +28,12 @@ public:
     }
 
     void stop();
+    bool restart();
 
 private:
+    bool start();
+
+    std::string base_address_;
     std::string address_;
     pid_t pid_ = -1;
 };

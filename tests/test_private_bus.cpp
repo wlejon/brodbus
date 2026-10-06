@@ -74,8 +74,39 @@ void test_private_bus_move() {
     CHECK_EQ(d3.pid(), -1);
 }
 
+void test_private_bus_restart() {
+    PrivateBus daemon;
+    if (!daemon.is_valid()) {
+        bstest::skip("test_private_bus", "dbus-daemon could not start");
+    }
+
+    std::string addr1 = daemon.address();
+    pid_t pid1 = daemon.pid();
+    auto pos1 = addr1.find(",guid=");
+    std::string base1 = (pos1 != std::string::npos) ? addr1.substr(0, pos1) : addr1;
+
+    REQUIRE(daemon.restart());
+    CHECK(daemon.is_valid());
+    CHECK(daemon.pid() > 0);
+    CHECK(daemon.pid() != pid1);
+
+    std::string addr2 = daemon.address();
+    auto pos2 = addr2.find(",guid=");
+    std::string base2 = (pos2 != std::string::npos) ? addr2.substr(0, pos2) : addr2;
+
+    CHECK_EQ(base1, base2);
+
+    // Verify the restarted bus works
+    std::string err;
+    auto bus = Bus::open_address(addr2, &err);
+    REQUIRE(bus);
+    CHECK(bus->is_valid());
+    CHECK(!bus->unique_name().empty());
+}
+
 int main() {
     test_private_bus_launch_and_stop();
     test_private_bus_move();
+    test_private_bus_restart();
     return bstest::finish("test_private_bus");
 }
