@@ -64,15 +64,15 @@ CMake options:
 ### Consuming brodbus
 
 Downstream projects consume the `brodbus::brodbus` CMake target. Ecosystem
-consumers pin it with `bro_dependency()` (their copy of bro's
+consumers declare it with `bro_dependency()` (their copy of bro's
 `cmake/bro_deps.cmake`): a target the outer project already added wins, else a
-`../brodbus` working tree beside the top-level project, else the pinned commit,
-fetched at configure (`-DFETCHCONTENT_SOURCE_DIR_BRODBUS=<path>` points at
+`../brodbus` working tree beside the top-level project, else the head of its
+main branch, fetched at configure (`-DFETCHCONTENT_SOURCE_DIR_BRODBUS=<path>` points at
 another tree):
 
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
-bro_dependency(brodbus GITHUB wlejon/brodbus REF <40-hex sha> OPTIONS BRODBUS_BUILD_TESTS=OFF)
+bro_dependency(brodbus OPTIONS BRODBUS_BUILD_TESTS=OFF)
 
 target_link_libraries(your_target PRIVATE brodbus::brodbus)
 ```
