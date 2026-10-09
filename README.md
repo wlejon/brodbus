@@ -63,45 +63,17 @@ CMake options:
 
 ### Consuming brodbus
 
-Downstream projects consume the `brodbus::brodbus` CMake target. Following the
-ecosystem dependency convention, consumers resolve `brodbus` either as a sibling
-checkout or as a vendored submodule:
-
-#### Sibling layout
-
-When `brodbus` is checked out beside your project at `../brodbus`:
-
-```cmake
-if(NOT TARGET brodbus::brodbus)
-    if(DEFINED BRODBUS_DIR AND EXISTS "${BRODBUS_DIR}/CMakeLists.txt")
-        # Explicit override supplied via -DBRODBUS_DIR=<path>
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../brodbus/CMakeLists.txt")
-        set(BRODBUS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../brodbus" CACHE PATH "brodbus source tree")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/../brodbus/CMakeLists.txt")
-        set(BRODBUS_DIR "${CMAKE_SOURCE_DIR}/../brodbus" CACHE PATH "brodbus source tree")
-    endif()
-
-    if(NOT BRODBUS_DIR OR NOT EXISTS "${BRODBUS_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR "brodbus not found beside this repository or at BRODBUS_DIR")
-    endif()
-
-    add_subdirectory("${BRODBUS_DIR}" "${CMAKE_BINARY_DIR}/brodbus-build" EXCLUDE_FROM_ALL)
-endif()
-```
-
-#### Submodule layout
-
-When `brodbus` is vendored as a git submodule under `third_party/brodbus`:
+Downstream projects consume the `brodbus::brodbus` CMake target. Ecosystem
+consumers pin it with `bro_dependency()` (their copy of bro's
+`cmake/bro_deps.cmake`): a target the outer project already added wins, else a
+`../brodbus` working tree beside the top-level project, else the pinned commit,
+fetched at configure (`-DFETCHCONTENT_SOURCE_DIR_BRODBUS=<path>` points at
+another tree):
 
 ```cmake
-if(NOT TARGET brodbus::brodbus)
-    add_subdirectory(third_party/brodbus EXCLUDE_FROM_ALL)
-endif()
-```
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
+bro_dependency(brodbus GITHUB wlejon/brodbus REF <40-hex sha> OPTIONS BRODBUS_BUILD_TESTS=OFF)
 
-#### Linking
-
-```cmake
 target_link_libraries(your_target PRIVATE brodbus::brodbus)
 ```
 
