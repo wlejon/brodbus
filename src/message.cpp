@@ -135,6 +135,11 @@ int Message::exit_container() {
     return sd_bus_message_exit_container(msg_);
 }
 
+int Message::skip(const char* types) {
+    if (!msg_) return -EINVAL;
+    return sd_bus_message_skip(msg_, types);
+}
+
 bool Message::at_end(bool complete) const {
     if (!msg_) return true;
     return sd_bus_message_at_end(msg_, complete ? 1 : 0) > 0;
@@ -210,6 +215,11 @@ bool Message::append_object_path(const std::string& val) {
     return append_basic('o', val.c_str());
 }
 
+bool Message::append_object_path(const char* val) {
+    const char* str = val ? val : "";
+    return append_basic('o', str);
+}
+
 bool Message::append_object_path(const ObjectPath& val) {
     return append_basic('o', val.c_str());
 }
@@ -244,66 +254,64 @@ bool Message::append_byte_list(const std::vector<uint8_t>& bytes) {
     return close_container() >= 0;
 }
 
+bool is_valid_object_path(const std::string& p) {
+    if (p.empty() || p[0] != '/') return false;
+    if (p.size() == 1) return true;
+    if (p.back() == '/') return false;
+    for (size_t i = 1; i < p.size(); ++i) {
+        char c = p[i];
+        if (c == '/') {
+            if (p[i - 1] == '/') return false;
+        } else if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                     (c >= '0' && c <= '9') || c == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Message::append_variant(const PropertyValue& val) {
     const auto& var = val.raw_variant();
     return std::visit([this](const auto& v) -> bool {
         using T = std::decay_t<decltype(v)>;
+        auto wrap = [this](const char* sig, auto&& fn) -> bool {
+            if (open_container('v', sig) < 0) return false;
+            if (!fn()) {
+                close_container();
+                return false;
+            }
+            return close_container() >= 0;
+        };
         if constexpr (std::is_same_v<T, bool>) {
-            if (open_container('v', "b") < 0) return false;
-            if (!append_bool(v)) return false;
-            return close_container() >= 0;
+            return wrap("b", [&] { return append_bool(v); });
         } else if constexpr (std::is_same_v<T, uint8_t>) {
-            if (open_container('v', "y") < 0) return false;
-            if (!append_byte(v)) return false;
-            return close_container() >= 0;
+            return wrap("y", [&] { return append_byte(v); });
         } else if constexpr (std::is_same_v<T, int16_t>) {
-            if (open_container('v', "n") < 0) return false;
-            if (!append_int16(v)) return false;
-            return close_container() >= 0;
+            return wrap("n", [&] { return append_int16(v); });
         } else if constexpr (std::is_same_v<T, uint16_t>) {
-            if (open_container('v', "q") < 0) return false;
-            if (!append_uint16(v)) return false;
-            return close_container() >= 0;
+            return wrap("q", [&] { return append_uint16(v); });
         } else if constexpr (std::is_same_v<T, int32_t>) {
-            if (open_container('v', "i") < 0) return false;
-            if (!append_int32(v)) return false;
-            return close_container() >= 0;
+            return wrap("i", [&] { return append_int32(v); });
         } else if constexpr (std::is_same_v<T, uint32_t>) {
-            if (open_container('v', "u") < 0) return false;
-            if (!append_uint32(v)) return false;
-            return close_container() >= 0;
+            return wrap("u", [&] { return append_uint32(v); });
         } else if constexpr (std::is_same_v<T, int64_t>) {
-            if (open_container('v', "x") < 0) return false;
-            if (!append_int64(v)) return false;
-            return close_container() >= 0;
+            return wrap("x", [&] { return append_int64(v); });
         } else if constexpr (std::is_same_v<T, uint64_t>) {
-            if (open_container('v', "t") < 0) return false;
-            if (!append_uint64(v)) return false;
-            return close_container() >= 0;
+            return wrap("t", [&] { return append_uint64(v); });
         } else if constexpr (std::is_same_v<T, double>) {
-            if (open_container('v', "d") < 0) return false;
-            if (!append_double(v)) return false;
-            return close_container() >= 0;
+            return wrap("d", [&] { return append_double(v); });
         } else if constexpr (std::is_same_v<T, std::string>) {
-            if (open_container('v', "s") < 0) return false;
-            if (!append_string(v)) return false;
-            return close_container() >= 0;
+            return wrap("s", [&] { return append_string(v); });
         } else if constexpr (std::is_same_v<T, ObjectPath>) {
-            if (open_container('v', "o") < 0) return false;
-            if (!append_object_path(v)) return false;
-            return close_container() >= 0;
+            if (!is_valid_object_path(v.path)) return false;
+            return wrap("o", [&] { return append_object_path(v); });
         } else if constexpr (std::is_same_v<T, UnixFd>) {
-            if (open_container('v', "h") < 0) return false;
-            if (!append_unix_fd(v)) return false;
-            return close_container() >= 0;
+            if (!v.valid()) return false;
+            return wrap("h", [&] { return append_unix_fd(v); });
         } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
-            if (open_container('v', "as") < 0) return false;
-            if (!append_string_list(v)) return false;
-            return close_container() >= 0;
+            return wrap("as", [&] { return append_string_list(v); });
         } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
-            if (open_container('v', "ay") < 0) return false;
-            if (!append_byte_list(v)) return false;
-            return close_container() >= 0;
+            return wrap("ay", [&] { return append_byte_list(v); });
         } else {
             return false;
         }
@@ -470,9 +478,9 @@ bool Message::read_variant(PropertyValue* out) {
         std::vector<uint8_t> bytes;
         if ((ok = read_byte_list(&bytes)) && out) *out = PropertyValue(std::move(bytes));
     } else {
-        // Unknown or unsupported variant, record as empty
-        ok = true;
-        if (out) *out = PropertyValue();
+        // Unknown or unsupported variant: skip unread payload inside 'v' before exiting container
+        ok = (skip(nullptr) >= 0);
+        if (ok && out) *out = PropertyValue();
     }
 
     if (!ok) {

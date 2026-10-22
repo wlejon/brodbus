@@ -160,6 +160,78 @@ void test_message_containers() {
     CHECK_EQ(v2.as_string(), std::string("variant-string"));
 }
 
+void test_message_unsupported_variants_and_append_cleanup() {
+    PrivateBus daemon;
+    if (!daemon.is_valid()) {
+        bstest::skip("test_message", "dbus-daemon could not start");
+    }
+
+    std::string err;
+    auto bus = Bus::open_address(daemon.address(), &err);
+    REQUIRE(bus);
+
+    Message m = bus->new_signal("/org/bro/Test", "org.bro.Test", "ComplexVariants", &err);
+    REQUIRE(m.is_valid());
+
+    // 1. Variant containing 'ao' (array of object paths)
+    CHECK(m.open_container('v', "ao") >= 0);
+    CHECK(m.open_container('a', "o") >= 0);
+    CHECK(m.append_object_path("/org/bro/Item1"));
+    CHECK(m.append_object_path("/org/bro/Item2"));
+    CHECK(m.close_container() >= 0);
+    CHECK(m.close_container() >= 0);
+
+    // 2. Variant containing 'a{sv}' (nested dictionary)
+    CHECK(m.open_container('v', "a{sv}") >= 0);
+    CHECK(m.open_container('a', "{sv}") >= 0);
+    CHECK(m.open_container('e', "sv") >= 0);
+    CHECK(m.append_string("NestedKey"));
+    CHECK(m.append_variant(PropertyValue(int32_t(42))));
+    CHECK(m.close_container() >= 0);
+    CHECK(m.close_container() >= 0);
+    CHECK(m.close_container() >= 0);
+
+    // 3. Variant containing struct '(ii)'
+    CHECK(m.open_container('v', "(ii)") >= 0);
+    CHECK(m.open_container('r', "ii") >= 0);
+    CHECK(m.append_int32(10));
+    CHECK(m.append_int32(20));
+    CHECK(m.close_container() >= 0);
+    CHECK(m.close_container() >= 0);
+
+    // 4. Supported variant after unsupported variants
+    CHECK(m.append_variant(PropertyValue(std::string("survives-after-skip"))));
+
+    // 5. Invalid append_variant (e.g. invalid object path inside variant) cleans up 'v' container
+    CHECK(!m.append_variant(PropertyValue(ObjectPath("not_a_valid_dbus_path"))));
+    // Subsequent valid append on the same message must still succeed at top level
+    CHECK(m.append_uint32(12345u));
+
+    CHECK(m.seal() >= 0);
+    CHECK(m.rewind(true) >= 0);
+
+    PropertyValue v_ao(uint32_t(99));
+    CHECK(m.read_variant(&v_ao));
+    CHECK(v_ao.is_empty());
+
+    PropertyValue v_asv(std::string("non-empty"));
+    CHECK(m.read_variant(&v_asv));
+    CHECK(v_asv.is_empty());
+
+    PropertyValue v_struct(true);
+    CHECK(m.read_variant(&v_struct));
+    CHECK(v_struct.is_empty());
+
+    PropertyValue v_after;
+    CHECK(m.read_variant(&v_after));
+    CHECK_EQ(v_after.as_string(), std::string("survives-after-skip"));
+
+    uint32_t trailing = 0;
+    CHECK(m.read_uint32(&trailing));
+    CHECK_EQ(trailing, 12345u);
+    CHECK(m.at_end(true));
+}
+
 void test_message_move() {
     PrivateBus daemon;
     if (!daemon.is_valid()) {
@@ -189,6 +261,7 @@ int main() {
     test_message_lifecycle();
     test_message_basic_types();
     test_message_containers();
+    test_message_unsupported_variants_and_append_cleanup();
     test_message_move();
     return bstest::finish("test_message");
 }

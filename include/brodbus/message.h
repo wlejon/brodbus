@@ -56,6 +56,7 @@ public:
     int close_container();
     int enter_container(char type, const char* contents = nullptr);
     int exit_container();
+    int skip(const char* types = nullptr);
     bool at_end(bool complete = false) const;
     int peek_type(char* type = nullptr, const char** contents = nullptr) const;
     int rewind(bool complete = false);
@@ -75,6 +76,7 @@ public:
     bool append_string(const std::string& val);
     bool append_string(const char* val);
     bool append_object_path(const std::string& val);
+    bool append_object_path(const char* val);
     bool append_object_path(const ObjectPath& val);
     bool append_unix_fd(int fd);
     bool append_unix_fd(const UnixFd& val);
