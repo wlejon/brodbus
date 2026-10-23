@@ -203,6 +203,7 @@ bool Message::append_double(double val) {
 }
 
 bool Message::append_string(const std::string& val) {
+    if (val.find('\0') != std::string::npos) return false;
     return append_basic('s', val.c_str());
 }
 
@@ -212,15 +213,18 @@ bool Message::append_string(const char* val) {
 }
 
 bool Message::append_object_path(const std::string& val) {
+    if (!is_valid_object_path(val)) return false;
     return append_basic('o', val.c_str());
 }
 
 bool Message::append_object_path(const char* val) {
     const char* str = val ? val : "";
+    if (!is_valid_object_path(str)) return false;
     return append_basic('o', str);
 }
 
 bool Message::append_object_path(const ObjectPath& val) {
+    if (!val.valid()) return false;
     return append_basic('o', val.c_str());
 }
 
@@ -233,6 +237,9 @@ bool Message::append_unix_fd(const UnixFd& val) {
 }
 
 bool Message::append_string_list(const std::vector<std::string>& list) {
+    for (const auto& item : list) {
+        if (item.find('\0') != std::string::npos) return false;
+    }
     if (open_container('a', "s") < 0) return false;
     for (const auto& item : list) {
         if (!append_string(item)) {
@@ -252,22 +259,6 @@ bool Message::append_byte_list(const std::vector<uint8_t>& bytes) {
         }
     }
     return close_container() >= 0;
-}
-
-bool is_valid_object_path(const std::string& p) {
-    if (p.empty() || p[0] != '/') return false;
-    if (p.size() == 1) return true;
-    if (p.back() == '/') return false;
-    for (size_t i = 1; i < p.size(); ++i) {
-        char c = p[i];
-        if (c == '/') {
-            if (p[i - 1] == '/') return false;
-        } else if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                     (c >= '0' && c <= '9') || c == '_')) {
-            return false;
-        }
-    }
-    return true;
 }
 
 bool Message::append_variant(const PropertyValue& val) {
@@ -301,6 +292,7 @@ bool Message::append_variant(const PropertyValue& val) {
         } else if constexpr (std::is_same_v<T, double>) {
             return wrap("d", [&] { return append_double(v); });
         } else if constexpr (std::is_same_v<T, std::string>) {
+            if (v.find('\0') != std::string::npos) return false;
             return wrap("s", [&] { return append_string(v); });
         } else if constexpr (std::is_same_v<T, ObjectPath>) {
             if (!is_valid_object_path(v.path)) return false;
@@ -309,6 +301,9 @@ bool Message::append_variant(const PropertyValue& val) {
             if (!v.valid()) return false;
             return wrap("h", [&] { return append_unix_fd(v); });
         } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+            for (const auto& item : v) {
+                if (item.find('\0') != std::string::npos) return false;
+            }
             return wrap("as", [&] { return append_string_list(v); });
         } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
             return wrap("ay", [&] { return append_byte_list(v); });

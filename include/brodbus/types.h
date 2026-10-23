@@ -1,13 +1,21 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
 namespace brodbus {
+
+// D-Bus wire specification validators (object paths, type signatures, and
+// power-of-two alignment rounding with 64-bit wraparound protection).
+bool is_valid_object_path(std::string_view p) noexcept;
+bool is_valid_signature(std::string_view sig, bool allow_multiple = true) noexcept;
+bool align_dbus_offset(std::size_t pos, std::size_t align, std::size_t* out) noexcept;
 
 struct ObjectPath {
     std::string path;
@@ -16,7 +24,7 @@ struct ObjectPath {
     ObjectPath(std::string p) : path(std::move(p)) {}
     ObjectPath(const char* p) : path(p ? p : "") {}
 
-    bool valid() const noexcept { return !path.empty() && path[0] == '/'; }
+    bool valid() const noexcept { return is_valid_object_path(path); }
     explicit operator bool() const noexcept { return valid(); }
     const std::string& str() const noexcept { return path; }
     const char* c_str() const noexcept { return path.c_str(); }

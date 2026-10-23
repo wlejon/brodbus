@@ -204,6 +204,12 @@ void test_message_unsupported_variants_and_append_cleanup() {
 
     // 5. Invalid append_variant (e.g. invalid object path inside variant) cleans up 'v' container
     CHECK(!m.append_variant(PropertyValue(ObjectPath("not_a_valid_dbus_path"))));
+    CHECK(!m.append_variant(PropertyValue(ObjectPath("/bad//double_slash"))));
+    CHECK(!m.append_variant(PropertyValue(ObjectPath("/bad/trailing/"))));
+    CHECK(!m.append_variant(PropertyValue(std::string("embedded\0nul", 12))));
+    CHECK(!m.append_string(std::string("embedded\0nul", 12)));
+    CHECK(!m.append_object_path("/bad//path"));
+    CHECK(!m.append_object_path(std::string("/bad/\0nul", 9)));
     // Subsequent valid append on the same message must still succeed at top level
     CHECK(m.append_uint32(12345u));
 

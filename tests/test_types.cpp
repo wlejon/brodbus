@@ -1,6 +1,8 @@
 #include "check.h"
 #include "brodbus/types.h"
 
+#include <limits>
+
 using namespace brodbus;
 
 void test_object_path() {
@@ -20,6 +22,91 @@ void test_object_path() {
 
     ObjectPath p4("/a");
     CHECK(p4 < p2);
+
+    // Adversarial object paths: root "/" is valid, but trailing slash, double slash,
+    // embedded NUL, spaces, hyphens, or missing leading slash are invalid.
+    CHECK(ObjectPath("/").valid());
+    CHECK(!ObjectPath("//").valid());
+    CHECK(!ObjectPath("/org//freedesktop").valid());
+    CHECK(!ObjectPath("/org/freedesktop/").valid());
+    CHECK(!ObjectPath("org/freedesktop").valid());
+    CHECK(!ObjectPath("/org/free-desktop").valid());
+    CHECK(!ObjectPath("/org/free.desktop").valid());
+    CHECK(!ObjectPath(std::string("/org/\0bad", 9)).valid());
+}
+
+void test_dbus_signature_and_alignment_bounds() {
+    // 1. Symbolic 64-bit alignment rounding `(pos + align - 1) & ~(align - 1)` verification:
+    // Every valid D-Bus alignment (1, 2, 4, 8) must round up without overflow when
+    // pos <= SIZE_MAX - (align - 1), and deterministically reject wraparound near SIZE_MAX.
+    const std::size_t max_sz = std::numeric_limits<std::size_t>::max();
+    for (std::size_t align : {std::size_t(1), std::size_t(2), std::size_t(4), std::size_t(8)}) {
+        const std::size_t mask = align - 1;
+        for (std::size_t pos = 0; pos <= 32; ++pos) {
+            std::size_t out = 0;
+            CHECK(align_dbus_offset(pos, align, &out));
+            CHECK(out >= pos);
+            CHECK((out % align) == 0);
+            CHECK(out - pos < align);
+        }
+        // Largest representable aligned offset: SIZE_MAX & ~mask
+        const std::size_t max_aligned = max_sz & ~mask;
+        std::size_t out = 0;
+        CHECK(align_dbus_offset(max_aligned, align, &out));
+        CHECK_EQ(out, max_aligned);
+        if (align > 1) {
+            CHECK(align_dbus_offset(max_aligned - 1, align, &out));
+            CHECK_EQ(out, max_aligned);
+            // Every pos in [max_aligned + 1 .. SIZE_MAX] would wrap (pos + align - 1) to 0..mask-1!
+            for (std::size_t overflow_pos = max_aligned + 1; overflow_pos != 0; ++overflow_pos) {
+                CHECK(!align_dbus_offset(overflow_pos, align, &out));
+                if (overflow_pos == max_sz) break;
+            }
+        }
+    }
+    // Invalid alignment values (0, 3, 5, 6, 7, 16) rejected.
+    for (std::size_t bad_align : {std::size_t(0), std::size_t(3), std::size_t(6), std::size_t(16)}) {
+        std::size_t out = 0;
+        CHECK(!align_dbus_offset(0, bad_align, &out));
+    }
+
+    // 2. D-Bus type signature bounds & container nesting depth verification:
+    CHECK(is_valid_signature("", true));
+    CHECK(!is_valid_signature("", false));
+    CHECK(is_valid_signature("s", false));
+    CHECK(is_valid_signature("a{sv}", false));
+    CHECK(is_valid_signature("(ii)a{ss}v", true));
+    CHECK(!is_valid_signature("(ii)a{ss}v", false));  // multiple complete types not allowed in variant/array
+
+    // Malformed signatures:
+    CHECK(!is_valid_signature("a", true));         // array without element type
+    CHECK(!is_valid_signature("()", true));        // empty struct forbidden by D-Bus spec
+    CHECK(!is_valid_signature("(ii", true));       // unclosed struct
+    CHECK(!is_valid_signature("ii)", true));       // unmatched closing paren
+    CHECK(!is_valid_signature("{sv}", true));      // dict entry outside array 'a'
+    CHECK(!is_valid_signature("a{vv}", true));     // non-basic dict key
+    CHECK(!is_valid_signature("a{(ii)v}", true));  // struct as dict key
+    CHECK(!is_valid_signature("a{s}", true));      // dict entry missing value type
+    CHECK(!is_valid_signature("a{svi}", true));    // dict entry with >2 fields
+    CHECK(!is_valid_signature(std::string("s\0i", 3), true));  // embedded NUL
+
+    // Exact 32-deep array nesting is valid; 33-deep array nesting must be rejected.
+    std::string a32(32, 'a');
+    a32 += 'i';
+    CHECK(is_valid_signature(a32, false));
+    std::string a33(33, 'a');
+    a33 += 'i';
+    CHECK(!is_valid_signature(a33, false));
+
+    // Exact 32-deep struct nesting is valid; 33-deep struct nesting must be rejected.
+    std::string s32 = std::string(32, '(') + "i" + std::string(32, ')');
+    CHECK(is_valid_signature(s32, false));
+    std::string s33 = std::string(33, '(') + "i" + std::string(33, ')');
+    CHECK(!is_valid_signature(s33, false));
+
+    // Signature length > 255 must be rejected.
+    CHECK(is_valid_signature(std::string(255, 'y'), true));
+    CHECK(!is_valid_signature(std::string(256, 'y'), true));
 }
 
 void test_unix_fd() {
@@ -118,6 +205,7 @@ void test_property_value_equality() {
 
 int main() {
     test_object_path();
+    test_dbus_signature_and_alignment_bounds();
     test_unix_fd();
     test_property_value_types();
     test_property_value_equality();
